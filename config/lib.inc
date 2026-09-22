@@ -120,6 +120,9 @@ CINC = -I./
 # Uncomment if SEVIRI support is desired.
 #LIBS += -L$(SEVIRI_UTIL_LIB) -lseviri_util
 #INC  += -I$(SEVIRI_UTIL_INCLUDE) -DINCLUDE_SEVIRI_SUPPORT
+LIBS += -L$(SEVIRI_ML_LIB) -lsevann -L$(SEVIRI_ML_PYTHON_LIB) -lpython3.10
+INC += -I$(SEVIRI_ML_INCLUDE) -I$(SEVIRI_ML_PYTHON_INCLUDE)
+INC += -DINCLUDE_SEVIRI_NEURALNET
 
 # Uncomment if SEVIRI_ML support is desired.
 # Please modify Python -lpython3.X to your Python version.

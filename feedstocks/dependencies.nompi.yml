@@ -23,7 +23,7 @@ dependencies:
  - seviri_util
  - hsd_reader * nompi_*
  - libemos
- - rttov * nompi_*
+ - rttov 13.1  * nompi_*
  - numpy
  - scipy
  - netcdf4

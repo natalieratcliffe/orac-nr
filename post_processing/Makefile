@@ -29,6 +29,13 @@ POSTPROC_OBJ = $(OBJS)/orac_input.o \
 
 POSTPROC_OBJ_MAIN = $(OBJS)/orac_postproc.o
 
+SEVIRI_ML_LIB = /home/users/nrat/orac/orac/src/seviri_ml
+SEVIRI_ML_INCLUDE = /home/users/nrat/orac/orac/src/seviri_ml
+SEVIRI_ML_PYTHON_LIB = /home/users/nrat/miniforge3/envs/orac_git/lib
+SEVIRI_ML_PYTHON_INCLUDE = /home/users/nrat/miniforge3/envs/orac_git/include/python3.10
+LIBS += -L$(SEVIRI_ML_LIB) -lsevann -L$(SEVIRI_ML_PYTHON_LIB) -lpython3.10
+INC += -I$(SEVIRI_ML_INCLUDE) -I$(SEVIRI_ML_PYTHON_INCLUDE)
+INC += -DINCLUDE_SEVIRI_NEURALNET
 
 # Compilation rules
 $(OBJS)/%.o: %.f90 $(ORAC_COMMON)/liborac_common.a
