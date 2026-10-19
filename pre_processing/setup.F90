@@ -1142,7 +1142,7 @@ subroutine setup_python(args, channel_ids_user, channel_info, verbose)
 
    call ncdf_open(fid, args%l1b_file, 'setup_python()')
    ! Read actual size of the netCDF4 file
-   nchans  = ncdf_dim_length(fid, 'nc', 'setup_python()')  
+   nchans  = ncdf_dim_length(fid, 'channels', 'setup_python()')  
    call ncdf_get_single_attribute_int(fid, 'max_chan_count', nchans_total)
 
    allocate(channel_ids_user(nchans))
