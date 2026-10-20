@@ -332,7 +332,8 @@ def extract_orac_libraries(lib_dict=None):
         except KeyError:
             lib_dict = read_orac_library_file(defaults.ORAC_LIB)
 
-    return [m[0] for m in re.findall(r"-L(.+?)(\s|$)", lib_dict["LIBS"])]
+    # \S+ so an empty -L (e.g. from an unset variable) doesn't swallow the next flag
+    return re.findall(r"-L(\S+)", lib_dict["LIBS"])
 
 
 def get_repository_revision():
