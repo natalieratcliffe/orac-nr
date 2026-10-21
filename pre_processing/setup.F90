@@ -79,6 +79,7 @@
 ! 2019/09/26, GT: Bug fix with orbit start-time extraction (file name time
 !                 strings are _rounded_ to nearest second).
 ! 2021/03/10, AP: Gather setup calls into a single routine.
+! 2026/21/10, NR: Added MSI support to python reader.
 !
 ! Bugs:
 ! None known.
@@ -2271,7 +2272,7 @@ subroutine setup_imager(args, opts, source_attributes, channel_info, verbose)
       ! get dimensions of the modis granule
       call read_modis_dimensions(args%geo_file, args%n_across_track, args%n_along_track)
 
-   case('PYTHON')
+   case('PYTHON', 'MSI')
       call setup_python(args, opts%channel_ids, channel_info, verbose)
 
    case('SEVIRI')

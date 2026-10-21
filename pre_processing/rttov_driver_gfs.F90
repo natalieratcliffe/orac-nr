@@ -61,6 +61,7 @@
 !                 with the allocation statements for these arrays and
 !                 RTTOV documentation. (nevals was not used anywhere
 !                 else and wasn't even initialised to any value!)
+! 2026/10/19, NR: Added EarthCARE MSI.
 !
 ! Bugs:
 ! - BRDF not yet implemented here, so RTTOV internal calculation used.
@@ -268,6 +269,15 @@ subroutine rttov_driver_gfs(coef_path, emiss_path, granule, preproc_dims, &
                     trim(granule%platform)
          stop error_stop_code
       end if
+   case('MSI')
+      if (trim(granule%platform) == 'EarthCARE') then
+         coef_file_vis = 'rtcoef_earthcare_1_msi_o3co2.dat'
+         coef_file_ir = 'rtcoef_earthcare_1_msi_o3co2_ironly.dat'
+      else
+         write(*,*) 'ERROR: rttov_driver_gfs(): Invalid MSI platform: ', &
+                    trim(granule%platform)
+         stop error_stop_code
+      endif
    case('MODIS')
       if (trim(granule%platform) == 'TERRA') then
          coef_file_vis = 'rtcoef_eos_1_modis-shifted_o3co2.dat'

@@ -1,14 +1,16 @@
 """
-*** ONLY SUITABLE FOR USE WITH FCI FOR NOW ***
+*** ONLY SUITABLE FOR USE WITH FCI AND EARTHCARE MSI FOR NOW ***
 Uses satpy to read in the satellite data from its native format and convert it into a .nc file that ORAC's preprocessor can handle.
 NB// As (for now) there is no ability to subset data that is in the PYTHON format within ORAC's preprocessing, any subsetting must happen here.
      In addition, due to how satpy works, it assumes the directory will only contain a single granule's worth of files.
+     This does not apply to single-file products (MSI), where only the file given is read.
 
 History:
 ! 2024/10/04, DR: First version.
 ! 2024/10/15, DR: Added subsetting in ORAC style and corrected VNIR channels from % reflectance to fractional.
 ! 2024/10/16, DR: Fixed relazi angle to match SEVIRI
 ! 2025/07/04. DR: Modified channel support to select subset of channels
+! 2026/10/19. NR: Added use for MSI EarthCARE
 """
 
 
@@ -17,6 +19,7 @@ import os, sys, click
 import numpy as np
 # os.system('echo "### $(date -u) ### Importing xarray..."')
 import xarray as xr
+import h5py
 # os.system('echo "### $(date -u) ### Importing datetime..."')
 from datetime import datetime as dt, timedelta
 # os.system('echo "### $(date -u) ### Importing pyorbital..."')
@@ -41,20 +44,34 @@ dask.config.set(scheduler='single-threaded')
 # we need to define the list of supported imagers and their relavent metadata here.
 supported_sensors = { # dict of sensors, whether they're multi-file or single file and extension for top-level dir if multi-file (only a problem for Sentinel), e.g:
     # '<sensor_name_from_satpy>': {'multifile?': <bool_type>, 'extension': <None_or_str_type>}
-    'fci': {'multifile?': True, 'extension': None, 'reader': 'fci_l1c_nc'}
-} 
+    'fci': {'multifile?': True, 'extension': None, 'reader': 'fci_l1c_nc', 'platform': 'MTG-I1'},
+    'msi': {'multifile?': False, 'extension': None, 'reader': 'msi_l1c_earthcare', 'platform': 'EarthCARE'}
+}
+
+# EarthCARE MSI bands as named by satpy's msi_l1c_earthcare reader, in order of wavelength
+# (0.67, 0.865, 1.67, 2.21, 8.8, 10.8, 12.0 um). Positions in this list are the instrument
+# channel numbers, which RTTOV needs even when --use_channels selects a subset.
+msi_bands = ['VIS', 'VNIR', 'SWIR1', 'SWIR2', 'TIR1', 'TIR2', 'TIR3']
+msi_angles = ['solar_zenith_angle', 'solar_azimuth_angle', 'sensor_zenith_angle', 'sensor_azimuth_angle']
 
 
-def read_sat_data(fname, sensor = 'fci', x0 = None, x1 = None, y0 = None, y1 = None, use_channels = None, high_res = False):
+def read_sat_data(fname, sensor, x0 = None, x1 = None, y0 = None, y1 = None, use_channels = None, high_res = False):
     '''
     Reads in satellite data from the path provided by <fname> using satpy and converts it into netCDF format.
     '''
     try:
-        base_dir = os.path.dirname(fname) if '.' in  fname else fname # fname can be a directory of files, e.g. FCI, AHI, SLSTR, or a single file, e.g. SEVIRI
-        fnames = find_files_and_readers(
-            base_dir = base_dir,
-            reader = supported_sensors[sensor]['reader']
-        )
+        if supported_sensors[sensor]['multifile?']:
+            base_dir = os.path.dirname(fname) if '.' in  fname else fname # fname can be a directory of files, e.g. FCI, AHI, SLSTR, or a single file, e.g. SEVIRI
+            fnames = find_files_and_readers(
+                base_dir = base_dir,
+                reader = supported_sensors[sensor]['reader']
+            )
+        else:
+            # Single-file products, e.g. MSI: read only the file given, as one directory usually holds many frames
+            if not os.path.isfile(fname):
+                raise FileNotFoundError(fname)
+            base_dir = os.path.dirname(fname)
+            fnames = {supported_sensors[sensor]['reader']: [fname]}
     except Exception as e:
         raise Exception(
             '''Files not found for sensor %s in %s
@@ -76,28 +93,55 @@ def read_sat_data(fname, sensor = 'fci', x0 = None, x1 = None, y0 = None, y1 = N
             in sat_data.available_dataset_names() 
             if len(dst_name.split('_')) == 2
         ]
+        # Sort the channels by wavelength or channel number
+        channels = sorted(zip([int(channel.split('_')[1]) for channel in channels], channels))
+        channels = [_[-1] for _ in channels]
+    elif sensor == 'msi':
+        # Take the bands from the fixed list, which skips the *_rel_error and ancillary datasets
+        channels = [
+            dst_name
+            for dst_name
+            in msi_bands
+            if dst_name in sat_data.available_dataset_names()
+        ]
     else:
         raise Exception('Sensor %s not currently supported' % sensor)
-    # Sort the channels by wavelength or channel number
-    channels = sorted(zip([int(channel.split('_')[1]) for channel in channels], channels))
-    channels = [_[-1] for _ in channels]
     print(channels)
     if use_channels is not None: # This should allow for selection of channels based on channel number
         channels = [channel for n, channel in enumerate(channels) if n+1 in use_channels] # We assume that use_channels is a list of integers using 1-indexing
     print(channels)
     # os.system('echo "### $(date -u) ### Loading channels..."')
-    sat_data.load(channels)
+    if sensor == 'msi':
+        # satpy's MSI reflectance is pi*L/E0 in %, with no cos(SZA) term. That matches what ORAC
+        # expects (cf. read_slstr_funcs.F90); the % is converted to a fraction further down.
+        # Newer satpy calls this 'unnormalized_reflectance' and deprecates 'reflectance'.
+        sw_channels = [channel for channel in channels if not channel.startswith('TIR')]
+        tir_channels = [channel for channel in channels if channel.startswith('TIR')]
+        if sw_channels:
+            try:
+                sat_data.load(sw_channels, calibration='unnormalized_reflectance')
+            except KeyError:
+                sat_data.load(sw_channels, calibration='reflectance')
+        if tir_channels:
+            sat_data.load(tir_channels)
+        # MSI files carry their own per-pixel viewing and solar geometry
+        sat_data.load(msi_angles)
+    else:
+        sat_data.load(channels)
     # Sort the channels to be in the correct order by central wavelength
     channels = sorted(zip([sat_data[channel].wavelength.central for channel in channels], channels))
     channels = [_[-1] for _ in channels]
-    sat_data.load([channels[-1]+'_time'])
+    if sensor == 'fci':
+        sat_data.load([channels[-1]+'_time'])
     sat_data_original = sat_data
     # Set everything to the coarsest area for now; in theory, we can use the higher res if we want
-    os.system('echo "### $(date -u) ### Resampling..."')
-    if not high_res:
-        sat_data = sat_data.resample(sat_data.coarsest_area())
-    else:
-        sat_data = sat_data.resample(sat_data.finest_area())
+    # All MSI bands and angles share one 500 m swath grid, so MSI is not resampled
+    if sensor != 'msi':
+        os.system('echo "### $(date -u) ### Resampling..."')
+        if not high_res:
+            sat_data = sat_data.resample(sat_data.coarsest_area())
+        else:
+            sat_data = sat_data.resample(sat_data.finest_area())
     os.system('echo "### $(date -u) ### Assigning actual granuale dimensions and subsetting if necessary..."')
     # Define global coords, i.e. x and y
     # DR: I believe this should be done on the basis of Fortran indexing, i.e. from 1, not 0
@@ -107,6 +151,7 @@ def read_sat_data(fname, sensor = 'fci', x0 = None, x1 = None, y0 = None, y1 = N
     y, x = sat_data[channels[-1]].data.shape[0], sat_data[channels[-1]].data.shape[1]
     os.system(f'echo "### $(date -u) ### Across track: {x}    Along track: {y}"')
     y, x = [_ + 1 for _ in range(y)], [_ + 1 for _ in range(x)]
+    n_rows_full = len(y) # Needed to interpolate MSI times along track after subsetting
     # Attempt subsecting if requested
     bounds = [x0, x1, y0, y1]
     if not bounds.count(None) == 4: # Only carry out the next step if we actually need to subsect
@@ -122,49 +167,83 @@ def read_sat_data(fname, sensor = 'fci', x0 = None, x1 = None, y0 = None, y1 = N
     os.system('echo "### $(date -u) ### Calculating angles..."')
     # Take this from the last available channel, as this should be a TIR channel at 2km native res
     lons, lats = sat_data[channels[-1]].area.get_lonlats()
-    # Retrieve viewing angle data
-    sat_azi, sat_zen = get_observer_look( # NB// sat_zen is actually elevation here; var name is for minimising memory waste
-        sat_lon = sat_data[channels[-1]].attrs['orbital_parameters']['satellite_actual_longitude'],
-        sat_lat = sat_data[channels[-1]].attrs['orbital_parameters']['satellite_actual_latitude'],
-        sat_alt = sat_data[channels[-1]].attrs['orbital_parameters']['satellite_actual_altitude'] / 1000.,
-        utc_time = sat_data.start_time + ((sat_data.end_time - sat_data.start_time)/2), # Take the mid-time of the scan of the whole scene
-        lon = lons,
-        lat = lats,
-        alt = 0. # This really should be a DEM assigned to the satellite FOV, but not sure the extra effort will make any real difference
-    )
-    sat_zen = 90. - sat_zen # Convert elevation to zenith that ORAC needs
-    # Load in the per-pixel time from the final channel
-    per_pixel_time = sat_data[channels[-1]+'_time'].compute().values
-    bad_pixel_times = np.isnan(per_pixel_time)
-    per_pixel_time[bad_pixel_times] = 0 # Make the date obviously wrong; we'll mask this later
-    per_pixel_time = np.datetime64('2000-01-01T00:00:00') + per_pixel_time.astype('timedelta64[s]') - np.timedelta64(86400, 's')
-    # print(per_pixel_time.dtype)
-    # Use the per-pixel times to get the solar info
-    sol_zen, sol_azi = get_alt_az( # NB// sol_zen is actually elevation here; var name is for minimising memory waste
-        utc_time = per_pixel_time,
-        lon = lons,
-        lat = lats
-    )
-    sol_azi = np.rad2deg(sol_azi)
-    # Fix solar azimuth so it's always positive, i.e. between 0 and 360
-    # sol_azi = sol_azi - 180.
-    # sol_azi[sol_azi < 0] = sol_azi[sol_azi < 0] + 360
-    # Convert elevation to zenith that ORAC needs
-    sol_zen = 90. - np.rad2deg(sol_zen) 
-    # print(np.nanmin(sol_zen), np.nanmax(sol_zen))
-    # Now we have the viewing and solar angles, we can calculate relative azimuth from Adam's method:
-    # https://eodg.atm.ox.ac.uk/eodg/gray/2020Povey1.pdf#:~:text=This%20notebook%20is%20intended%20to%20plot%20the
-    dummy_sol_azi = sol_azi.copy()
-    dummy_sol_azi[sol_azi < 0] = sol_azi[sol_azi < 0] + 360
-    rel_azi = np.abs(sat_azi - dummy_sol_azi)
-    print(np.nanmin(rel_azi), np.nanmax(rel_azi))
-    where_too_large = rel_azi > 180
-    # Clean it up
-    rel_azi[where_too_large] = 360 - rel_azi[where_too_large]
-    print(np.nanmin(rel_azi), np.nanmax(rel_azi))
-    # print(sat_data[channels[-1]].time_parameters['observation_start_time'])
-    obs_start_time = sat_data[channels[-1]].time_parameters['observation_start_time']
-    obs_end_time = sat_data[channels[-1]].time_parameters['observation_end_time']
+    if sensor == 'msi':
+        # A swath's lons/lats may still be dask arrays; make writable numpy copies
+        lons, lats = np.array(lons, dtype=np.float64), np.array(lats, dtype=np.float64)
+        # A polar orbiter has no fixed satellite position, so take the geometry from the file
+        def msi_angle(name):
+            if name in sat_data:
+                return np.array(sat_data[name].values, dtype=np.float64)
+            # Some products (e.g. baseline BA) hold elevation rather than zenith angles, which
+            # satpy can't load, so read the elevation directly and subset to match
+            with h5py.File(fname, 'r') as h5_file:
+                elev = h5_file['ScienceData/' + name.replace('zenith', 'elevation')][()]
+            return 90. - np.array(elev, dtype=np.float64)[y[0]-1:y[-1], x[0]-1:x[-1]]
+        sat_zen, sat_azi, sol_zen, sol_azi = [
+            msi_angle(angle)
+            for angle
+            in ['sensor_zenith_angle', 'sensor_azimuth_angle', 'solar_zenith_angle', 'solar_azimuth_angle']
+        ]
+        # Mask any unflagged fill values; read_python.F90 only masks angles below -200
+        for zen in (sat_zen, sol_zen):
+            zen[(zen < 0) | (zen > 180)] = np.nan
+        for azi in (sat_azi, sol_azi):
+            azi[np.abs(azi) > 360] = np.nan
+        # The file has no per-pixel time, so interpolate linearly along track between the
+        # frame start and end times taken from the filename
+        obs_start_time, obs_end_time = sat_data.start_time, sat_data.end_time
+        row_fraction = (np.array(y) - 1) / max(n_rows_full - 1, 1)
+        row_offset = (row_fraction * (obs_end_time - obs_start_time).total_seconds() * 1e6).astype('timedelta64[us]')
+        row_time = np.datetime64(obs_start_time, 'us') + row_offset
+        per_pixel_time = np.repeat(row_time[:, np.newaxis], len(x), axis=1)
+        bad_pixel_times = np.zeros(per_pixel_time.shape, dtype=bool)
+        # Put both azimuths in 0-360 before differencing them, as below
+        rel_azi = np.abs(sat_azi % 360 - sol_azi % 360)
+        where_too_large = rel_azi > 180
+        rel_azi[where_too_large] = 360 - rel_azi[where_too_large]
+    else:
+        sat_azi, sat_zen = get_observer_look( # NB// sat_zen is actually elevation here; var name is for minimising memory waste
+            sat_lon = sat_data[channels[-1]].attrs['orbital_parameters']['satellite_actual_longitude'],
+            sat_lat = sat_data[channels[-1]].attrs['orbital_parameters']['satellite_actual_latitude'],
+            sat_alt = sat_data[channels[-1]].attrs['orbital_parameters']['satellite_actual_altitude'] / 1000.,
+            utc_time = sat_data.start_time + ((sat_data.end_time - sat_data.start_time)/2), # Take the mid-time of the scan of the whole scene
+            lon = lons,
+            lat = lats,
+            alt = 0. # This really should be a DEM assigned to the satellite FOV, but not sure the extra effort will make any real difference
+        )
+        sat_zen = 90. - sat_zen # Convert elevation to zenith that ORAC needs
+        # Load in the per-pixel time from the final channel
+        per_pixel_time = sat_data[channels[-1]+'_time'].compute().values
+        bad_pixel_times = np.isnan(per_pixel_time)
+        per_pixel_time[bad_pixel_times] = 0 # Make the date obviously wrong; we'll mask this later
+        per_pixel_time = np.datetime64('2000-01-01T00:00:00') + per_pixel_time.astype('timedelta64[s]') - np.timedelta64(86400, 's')
+        # print(per_pixel_time.dtype)
+        # Use the per-pixel times to get the solar info
+        sol_zen, sol_azi = get_alt_az( # NB// sol_zen is actually elevation here; var name is for minimising memory waste
+            utc_time = per_pixel_time,
+            lon = lons,
+            lat = lats
+        )
+        sol_azi = np.rad2deg(sol_azi)
+        # Fix solar azimuth so it's always positive, i.e. between 0 and 360
+        # sol_azi = sol_azi - 180.
+        # sol_azi[sol_azi < 0] = sol_azi[sol_azi < 0] + 360
+        # Convert elevation to zenith that ORAC needs
+        sol_zen = 90. - np.rad2deg(sol_zen) 
+        # print(np.nanmin(sol_zen), np.nanmax(sol_zen))
+        # Now we have the viewing and solar angles, we can calculate relative azimuth from Adam's method:
+        # https://eodg.atm.ox.ac.uk/eodg/gray/2020Povey1.pdf#:~:text=This%20notebook%20is%20intended%20to%20plot%20the
+        dummy_sol_azi = sol_azi.copy()
+        dummy_sol_azi[sol_azi < 0] = sol_azi[sol_azi < 0] + 360
+        rel_azi = np.abs(sat_azi - dummy_sol_azi)
+        print(np.nanmin(rel_azi), np.nanmax(rel_azi))
+        where_too_large = rel_azi > 180
+        # Clean it up
+        rel_azi[where_too_large] = 360 - rel_azi[where_too_large]
+        print(np.nanmin(rel_azi), np.nanmax(rel_azi))
+        # print(sat_data[channels[-1]].time_parameters['observation_start_time'])
+        obs_start_time = sat_data[channels[-1]].time_parameters['observation_start_time']
+        obs_end_time = sat_data[channels[-1]].time_parameters['observation_end_time']
     # Define the global vars for use in generating the final .nc file
     _FillValue = -999.
     # Define the channels dimension based on the central wavelengths
@@ -202,13 +281,22 @@ def read_sat_data(fname, sensor = 'fci', x0 = None, x1 = None, y0 = None, y1 = N
     sol_azi[np.isnan(sol_azi)] = _FillValue
     sol_zen[np.isnan(sol_zen)] = _FillValue
     rel_azi[np.isnan(rel_azi)] = _FillValue
-    # Assign legacy channels for ORAC to be able to read; hard-coded to FCI for now
-    channel_ids_default = (3, 4, 7, 9, 14, 15) # 0.6um, 0.8um, 1.6um, 3.9um, 10.8um, 12um
     # Assign the rest of the attributes that ORAC expects
     all_channel_sw_flag = tuple([1. if _ < 4 else 0. for _ in channel_dim])
     all_channel_lw_flag = tuple([1. if _ >= 3.6 else 0. for _ in channel_dim])
-    all_channel_ids_rttov_coef_sw = tuple([n + 1. if _ < 4 else 0 for n, _ in enumerate(channel_dim)])
-    all_channel_ids_rttov_coef_lw = tuple([n + 1 + 1 - sum(all_channel_sw_flag) if _ >= 3.6 else 0 for n, _ in enumerate(channel_dim)])
+    if sensor == 'msi':
+        # Assign legacy channels for ORAC to be able to read: 0.67um, 0.865um, 1.67um, -, 10.8um, 12um.
+        # MSI has no 3.x um channel, so that slot holds 2.21um. Only used if channel_ids is missing.
+        channel_ids_default = (1, 2, 3, 4, 6, 7)
+        # RTTOV channel numbers are positions within the coefficient file. The EarthCARE MSI file
+        # (rtcoef_earthcare_1_msi_o3co2.dat) only holds the three TIR bands, so they count from 1
+        all_channel_ids_rttov_coef_sw = tuple([msi_bands.index(channel) + 1 if wl < 4 else 0 for channel, wl in zip(channels, channel_dim)])
+        all_channel_ids_rttov_coef_lw = tuple([msi_bands.index(channel) - msi_bands.index('TIR1') + 1 if wl >= 3.6 else 0 for channel, wl in zip(channels, channel_dim)])
+    else:
+        # Assign legacy channels for ORAC to be able to read; hard-coded to FCI for now
+        channel_ids_default = (3, 4, 7, 9, 14, 15) # 0.6um, 0.8um, 1.6um, 3.9um, 10.8um, 12um
+        all_channel_ids_rttov_coef_sw = tuple([n + 1. if _ < 4 else 0 for n, _ in enumerate(channel_dim)])
+        all_channel_ids_rttov_coef_lw = tuple([n + 1 + 1 - sum(all_channel_sw_flag) if _ >= 3.6 else 0 for n, _ in enumerate(channel_dim)])
     all_map_ids_view_number = tuple([1. for _ in channels])
     all_channel_fractional_uncertainty = tuple([0. for _ in channels])
     all_channel_minimum_uncertainty = tuple([0. for _ in channels])
@@ -318,7 +406,7 @@ def read_sat_data(fname, sensor = 'fci', x0 = None, x1 = None, y0 = None, y1 = N
             )
         },
         attrs={
-            'platform': 'MTG-I1',
+            'platform': supported_sensors[sensor]['platform'],
             'sensor' : sensor.upper(),
             'start_time' : obs_start_time.strftime('%Y-%m-%dT%H:%M:%S'),
             'end_time' : obs_end_time.strftime('%Y-%m-%dT%H:%M:%S'),
@@ -360,6 +448,8 @@ def write_orac_compatible_file(base_dir, nc_file):
     if nc_file.sensor == 'FCI':
         out_fname = 'W_XX-EUMETSAT-Darmstadt,IMG+SAT,MTI1+FCI-1C-RRAD-FDHSI-FD--CHK-BODY---NC4E_C_EUMT_' + \
             ftime.strftime('%Y%m%d%H%M%S') + '.orac-compatible.nc'
+    elif nc_file.sensor == 'MSI':
+        out_fname = 'EarthCARE_MSI_RGR_1C_' + ftime.strftime('%Y%m%dT%H%M%S') + '.orac-compatible.nc'
     else:
         raise Exception('sensor not supported yet')
     full_fname = os.path.join(
@@ -375,6 +465,13 @@ def write_orac_compatible_file(base_dir, nc_file):
     '--fname', '-f',
     prompt = '/full/path/to/filename',
     help = 'The full path to the filename or directory to be processed.'
+)
+@click.option(
+    '--sensor', '-s',
+    type = click.Choice(list(supported_sensors.keys()), case_sensitive = False),
+    default = 'fci',
+    show_default = True,
+    help = 'The sensor to be processed. MSI needs the path to a single MSI_RGR_1C .h5 file.'
 )
 @click.option(
     '--limit', '-l',
@@ -395,7 +492,7 @@ def write_orac_compatible_file(base_dir, nc_file):
     default = None,
     help = 'A list of channels numbers to be extracted in the preparation. Defaults to using all channels if none specified.'
 )
-def main(fname, limit, high_res, use_channels):
+def main(fname, sensor, limit, high_res, use_channels):
     '''
     Process the <fname> satellite product.
     '''
@@ -428,6 +525,7 @@ def main(fname, limit, high_res, use_channels):
     # Now we can pass this to the reader
     nc_file, base_dir = read_sat_data(
         fname,
+        sensor.lower(),
         x0 = limits['x0'],
         x1 = limits['x1'],
         y0 = limits['y0'],

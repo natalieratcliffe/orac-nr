@@ -198,7 +198,7 @@ subroutine read_imager(granule, opts, path_to_aatsr_drift_table, &
       ! In absence of proper mask set everything to "1" for cloud mask
       imager_flags%cflag = 1
 
-     case('PYTHON')
+     case('PYTHON', 'MSI')
         ! Read the L1B data, according to the dimensions and offsets specified in
         ! imager_geolocation
         call read_python(granule%l1b_file, imager_geolocation, &

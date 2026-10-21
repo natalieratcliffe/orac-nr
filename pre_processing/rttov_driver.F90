@@ -159,6 +159,7 @@
 !                 RTTOV documentation). Removed declaration on nevals
 !                 as it is not used anywhere else (and never had a
 !                 value assigned to it)!
+! 2026/10/19, NR: Added EarthCARE MSI.
 !
 ! Bugs:
 ! - BRDF not yet implemented here, so RTTOV internal calculation used.
@@ -382,6 +383,15 @@ subroutine rttov_driver(coef_path, emiss_path, granule, preproc_dims, &
          coef_file_ir = 'rtcoef_mtg_4_fci_o3co2_ironly.dat'
       else
          write(*,*) 'ERROR: rttov_driver(): Invalid FCI platform: ', &
+                    trim(granule%platform)
+         stop error_stop_code
+      endif
+   case('MSI')
+      if (trim(granule%platform) == 'EarthCARE') then
+         coef_file_vis = 'rtcoef_earthcare_1_msi_o3co2.dat'
+         coef_file_ir = 'rtcoef_earthcare_1_msi_o3co2_ironly.dat'
+      else
+         write(*,*) 'ERROR: rttov_driver(): Invalid MSI platform: ', &
                     trim(granule%platform)
          stop error_stop_code
       endif

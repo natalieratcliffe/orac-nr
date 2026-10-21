@@ -150,6 +150,7 @@
 ! 2022/01/27, GT: Added CTP input file to Ctrl%FID structure.
 ! 2024/10/15, DR: Added support for FCI
 ! 2024/12/03, DR: Added support for ISCCP-NG GeoRing
+! 2026/10/19, NR: Added support for EarthCARE MSI
 !
 ! Bugs:
 ! None known.
@@ -839,6 +840,24 @@ subroutine Read_Driver(Ctrl, global_atts, source_atts)
       Ctrl%r_e_chans = (/ 5, 6, 7, 20 /)
       allocate(Ctrl%ir_chans(3))
       Ctrl%ir_chans  = (/ 20, 31, 32 /)
+   else if (Ctrl%InstName(1:3) == 'MSI') then
+      ! Channels: 1 0.67, 2 0.865, 3 1.65, 4 2.21, 5 8.8, 6 10.8, 7 12.0 um.
+      ! MSI has no 3.x um channel, so I_legacy_3_xx is left at 0.
+      Ctrl%Ind%Y_Id_legacy(I_legacy_0_6x) = 1
+      Ctrl%Ind%Y_Id_legacy(I_legacy_0_8x) = 2
+      Ctrl%Ind%Y_Id_legacy(I_legacy_1_6x) = 3
+      Ctrl%Ind%Y_Id_legacy(I_legacy_11_x) = 6
+      Ctrl%Ind%Y_Id_legacy(I_legacy_12_x) = 7
+
+      allocate(Ctrl%ReChans(2))
+      Ctrl%ReChans = (/ 3, 4 /)
+
+      allocate(Ctrl%tau_chans(2))
+      Ctrl%tau_chans = (/ 1, 2 /)
+      allocate(Ctrl%r_e_chans(2))
+      Ctrl%r_e_chans = (/ 3, 4 /)
+      allocate(Ctrl%ir_chans(3))
+      Ctrl%ir_chans  = (/ 5, 6, 7 /)
    else if (Ctrl%InstName(1:6) == 'SEVIRI') then
       Ctrl%Ind%Y_Id_legacy(I_legacy_0_6x) = 1
       Ctrl%Ind%Y_Id_legacy(I_legacy_0_8x) = 2

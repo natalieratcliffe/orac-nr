@@ -418,6 +418,26 @@ class FileName:
             self.predef = True
             return
 
+        # Attempt EarthCARE MSI L1C file converted by tools/satpy_reader.py
+        mat = re.search( # EarthCARE_MSI_RGR_1C_20250101T001500.orac-compatible.nc
+            r'EarthCARE_MSI_RGR_1C_'
+            r'(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})T'
+            r'(?P<hour>\d{2})(?P<min>\d{2})(?P<sec>\d{2})'
+            r'.orac-compatible.nc', filename
+        )
+        if mat:
+            self.sensor = 'MSI' # Fortran routes MSI to the PYTHON reader
+            self.platform = 'EarthCARE'
+            self.time = datetime.datetime(
+                int(mat.group('year')), int(mat.group('month')),
+                int(mat.group('day')), int(mat.group('hour')),
+                int(mat.group('min')), int(mat.group('sec')), 0
+            )
+            self.dur = datetime.timedelta(seconds=720)  # Approximately; one of eight frames per orbit
+            self.geo = filename
+            self.predef = True
+            return
+
         # Processed ORAC output
         pattern = (
             r'(?P<project>[^-]+)-'
