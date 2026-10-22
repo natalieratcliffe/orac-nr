@@ -288,8 +288,9 @@ def read_sat_data(fname, sensor, x0 = None, x1 = None, y0 = None, y1 = None, use
         # Assign legacy channels for ORAC to be able to read: 0.67um, 0.865um, 1.67um, -, 10.8um, 12um.
         # MSI has no 3.x um channel, so that slot holds 2.21um. Only used if channel_ids is missing.
         channel_ids_default = (1, 2, 3, 4, 6, 7)
-        # RTTOV channel numbers are positions within the coefficient file. The EarthCARE MSI file
-        # (rtcoef_earthcare_1_msi_o3co2.dat) only holds the three TIR bands, so they count from 1
+        # RTTOV channel numbers are positions within the coefficient file. SW channels index the full
+        # file (rtcoef_earthcare_1_msi_o3co2.dat, all 7 bands); LW channels index the IR-only file
+        # (rtcoef_earthcare_1_msi_o3co2_ironly.dat, TIR1-3 only), so they count from 1 at TIR1
         all_channel_ids_rttov_coef_sw = tuple([msi_bands.index(channel) + 1 if wl < 4 else 0 for channel, wl in zip(channels, channel_dim)])
         all_channel_ids_rttov_coef_lw = tuple([msi_bands.index(channel) - msi_bands.index('TIR1') + 1 if wl >= 3.6 else 0 for channel, wl in zip(channels, channel_dim)])
     else:
@@ -352,6 +353,11 @@ def read_sat_data(fname, sensor, x0 = None, x1 = None, y0 = None, y1 = None, use
     all_map_ids_abs_to_ref_band_land = tuple([map_band(_, mapping_type='land') for _ in channel_dim])
     all_map_ids_abs_to_ref_band_sea = tuple([map_band(_, mapping_type='sea') for _ in channel_dim])
     all_map_ids_abs_to_snow_and_ice = tuple([map_band(_, mapping_type='snow_and_ice') for _ in channel_dim])
+    if sensor == 'msi':
+        # 2.21um is outside the tolerance of every snow/ice band, but ORAC needs a band for every
+        # shortwave channel. Map it to 1.6um, as MODIS does for 2.13um. Thermal bands stay 0.
+        msi_snow_and_ice = {'VIS': 1, 'VNIR': 2, 'SWIR1': 3, 'SWIR2': 3, 'TIR1': 0, 'TIR2': 0, 'TIR3': 0}
+        all_map_ids_abs_to_snow_and_ice = tuple([msi_snow_and_ice[channel] for channel in channels])
     # Finally, convert the gregorian datetime (normal) to Julian datetime
     def greg2jd(arr):
         # arr = arr.item()   
