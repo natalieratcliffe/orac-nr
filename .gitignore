@@ -62,3 +62,4 @@
 
 # /feedstocks/
 /feedstocks/*/conda_build_config.yaml
+*.mod
