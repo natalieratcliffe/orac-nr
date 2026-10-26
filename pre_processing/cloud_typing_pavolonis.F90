@@ -86,6 +86,8 @@
 ! 2024/03/13, GT: Added a check for missing values in the 11 micron band before
 !                 attempting cloud masking/typing. This catches pixels which
 !                 exist and are geolocated, but have no data.
+! 2026/09/22, NR: Added support for the MSI (EarthCARE) instrument. Without the 
+!                 3ish micron channel, the cloud typing is skipped.
 !
 ! Bugs:
 ! None known.
@@ -649,6 +651,27 @@ subroutine cloud_type(channel_info, sensor, surface, imager_flags, &
             case(14)
                ch5 = i
             case(15)
+               ch6 = i
+            end select
+         end do
+      else if (trim(adjustl(sensor)) .eq. 'MSI') then
+         do i = 1, channel_info%nchannels_total
+            ii = channel_info%map_ids_channel_to_sw(i)
+            select case (channel_info%channel_ids_instr(i))
+            case(1)
+               ch1 = i
+               sw1 = ii
+            case(2)
+               ch2 = i
+               sw2 = ii
+            case(3)
+               ch3 = i
+               sw3 = ii
+            case(4)
+               ch4 = i
+            case(6)
+               ch5 = i
+            case(7)
                ch6 = i
             end select
          end do
@@ -2149,6 +2172,8 @@ function plank_inv(input_platform, T)
       index = 25
    case ("MTG-I1")
       index = 26
+   case ("EarthCARE")
+      index = 27
    case ("default")
       index = 27
    case default
