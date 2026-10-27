@@ -83,6 +83,8 @@
 ! 2018/01/19, GT: Removed QCFlag scale_factor and add_offset values, as these
 !    should only be used for packed floating point data.
 ! 2018/06/08, SP: Add satellite azimuth angle to output.
+! 2024/03/13, GT: Updated cldtype to include dust values and removed
+!    scale_factor and add_offset from the various cloud mask/type variables
 !
 ! Bugs:
 ! None known.
@@ -1582,8 +1584,6 @@ end if
            long_name     = 'number of retrieval iterations', &
            standard_name = '', &
            fill_value    = byte_fill_value, &
-           scale_factor  = output_data%niter_scale, &
-           add_offset    = output_data%niter_offset, &
            valid_min     = output_data%niter_vmin, &
            valid_max     = output_data%niter_vmax, &
            units         = '1', &
@@ -1710,8 +1710,6 @@ end if
            long_name     = 'land/sea flag', &
            standard_name = 'land_binary_mask', &
            fill_value    = byte_fill_value, &
-           scale_factor  = output_data%lsflag_scale, &
-           add_offset    = output_data%lsflag_offset, &
            valid_min     = output_data%lsflag_vmin, &
            valid_max     = output_data%lsflag_vmax, &
            units         = '1', &
@@ -1732,8 +1730,6 @@ end if
            long_name     = 'land use flag', &
            standard_name = 'land_use_mask', &
            fill_value    = byte_fill_value, &
-           scale_factor  = output_data%lusflag_scale, &
-           add_offset    = output_data%lusflag_offset, &
            valid_min     = output_data%lusflag_vmin, &
            valid_max     = output_data%lusflag_vmax, &
            units         = '1', &
@@ -1801,8 +1797,6 @@ end if
            long_name     = 'illumination flag', &
            standard_name = '', &
            fill_value    = byte_fill_value, &
-           scale_factor  = output_data%illum_scale, &
-           add_offset    = output_data%illum_offset, &
            valid_min     = output_data%illum_vmin, &
            valid_max     = output_data%illum_vmax, &
            units         = '1', &
@@ -1823,7 +1817,10 @@ end if
                'opaque_ice ' // &
                'cirrus ' // &
                'overlap ' // &
-               'prob_opaque_ice'
+               'prob_opaque_ice ' // &
+               'N/A ' // &
+               'dust_clear ' // &
+               'dust_switched_from_cloud'
 
    call ncdf_def_var_byte_packed_byte( &
            ncid, &
@@ -1834,12 +1831,10 @@ end if
            long_name     = 'Pavolonis cloud type', &
            standard_name = '', &
            fill_value    = byte_fill_value, &
-           scale_factor  = output_data%cldtype_scale, &
-           add_offset    = output_data%cldtype_offset, &
            valid_min     = output_data%cldtype_vmin, &
            valid_max     = output_data%cldtype_vmax, &
            units         = '1', &
-           flag_values   = '0b 1b 2b 3b 4b 5b 6b 7b 8b 9b', &
+           flag_values   = '0b 1b 2b 3b 4b 5b 6b 7b 8b 9b 10b 11b 12b', &
            flag_meanings = trim(adjustl(input_dummy)), &
            deflate_level = deflate_level, &
            shuffle       = shuffle_flag)
@@ -1857,8 +1852,6 @@ if (indexing%flags%do_cldmask) then
            long_name     = 'Neural net cloud mask (radiance based)', &
            standard_name = '', &
            fill_value    = byte_fill_value, &
-           scale_factor  = output_data%cldmask_scale, &
-           add_offset    = output_data%cldmask_offset, &
            valid_min     = output_data%cldmask_vmin, &
            valid_max     = output_data%cldmask_vmax, &
            units         = '1', &
@@ -1903,8 +1896,6 @@ if (indexing%flags%do_ann_phase) then
            long_name     = 'Neural net cloud phase mask (radiance based)', &
            standard_name = '', &
            fill_value    = byte_fill_value, &
-           scale_factor  = output_data%ann_phase_scale, &
-           add_offset    = output_data%ann_phase_offset, &
            valid_min     = output_data%ann_phase_vmin, &
            valid_max     = output_data%ann_phase_vmax, &
            units         = '1', &
@@ -1986,8 +1977,6 @@ if (indexing%flags%do_phase) then
            standard_name = 'thermodynamic_phase_of_cloud_water_particles_' // &
                            'at_cloud_top', &
            fill_value    = byte_fill_value, &
-           scale_factor  = output_data%phase_scale, &
-           add_offset    = output_data%phase_offset, &
            valid_min     = output_data%phase_vmin, &
            valid_max     = output_data%phase_vmax, &
            flag_values   = input_dummy2, &
@@ -2011,8 +2000,6 @@ if (indexing%flags%do_phase_pavolonis) then
            standard_name = 'thermodynamic_phase_of_cloud_water_particles_' // &
                            'at_cloud_top', &
            fill_value    = byte_fill_value, &
-           scale_factor  = output_data%phase_pavolonis_scale, &
-           add_offset    = output_data%phase_pavolonis_offset, &
            valid_min     = output_data%phase_pavolonis_vmin, &
            valid_max     = output_data%phase_pavolonis_vmax, &
            units         = '1', &
@@ -2035,8 +2022,6 @@ if (indexing%flags%do_indexing .and. present(ch_var)) then
            long_name     = 'instrument channel index', &
            standard_name = '', &
            fill_value    = byte_fill_value, &
-           scale_factor  = output_data%y_id_scale, &
-           add_offset    = output_data%y_id_offset, &
            valid_min     = output_data%y_id_vmin, &
            valid_max     = output_data%y_id_vmax, &
            deflate_level = deflate_level, &
@@ -2054,8 +2039,6 @@ if (indexing%flags%do_indexing .and. present(ch_var)) then
            long_name     = 'instrument channel flags', &
            standard_name = '', &
            fill_value    = byte_fill_value, &
-           scale_factor  = output_data%ch_is_scale, &
-           add_offset    = output_data%ch_is_offset, &
            valid_min     = output_data%ch_is_vmin, &
            valid_max     = output_data%ch_is_vmax, &
            deflate_level = deflate_level, &
@@ -2073,8 +2056,6 @@ if (indexing%flags%do_indexing .and. present(ch_var)) then
            long_name     = 'surface reflectance output flags', &
            standard_name = '', &
            fill_value    = byte_fill_value, &
-           scale_factor  = output_data%rho_flags_scale, &
-           add_offset    = output_data%rho_flags_offset, &
            valid_min     = output_data%rho_flags_vmin, &
            valid_max     = output_data%rho_flags_vmax, &
            deflate_level = deflate_level, &
@@ -2094,8 +2075,6 @@ if (indexing%flags%do_indexing) then
            long_name     = 'instrument channel view index', &
            standard_name = '', &
            fill_value    = byte_fill_value, &
-           scale_factor  = output_data%view_id_scale, &
-           add_offset    = output_data%view_id_offset, &
            valid_min     = output_data%view_id_vmin, &
            valid_max     = output_data%view_id_vmax, &
            deflate_level = deflate_level, &

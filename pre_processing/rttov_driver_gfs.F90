@@ -61,6 +61,7 @@
 !                 with the allocation statements for these arrays and
 !                 RTTOV documentation. (nevals was not used anywhere
 !                 else and wasn't even initialised to any value!)
+! 2024/07/01, DH: Change indexing to use preproc_dims for all dimensions
 ! 2026/10/19, NR: Added EarthCARE MSI.
 !
 ! Bugs:
@@ -484,8 +485,8 @@ subroutine rttov_driver_gfs(coef_path, emiss_path, granule, preproc_dims, &
    ! Copy preprocessing grid data into RTTOV profile structure
    ! Create a lowest layer from the surface properties
    count = 0
-   do jdim = preproc_dims%min_lat, preproc_dims%max_lat
-      do idim = preproc_dims%min_lon, preproc_dims%max_lon
+   do jdim = 1, preproc_dims%ydim
+      do idim = 1, preproc_dims%xdim
          count = count + 1
 
          ! set gas units to 1, specifying gas input in kg/kg
@@ -540,8 +541,8 @@ subroutine rttov_driver_gfs(coef_path, emiss_path, granule, preproc_dims, &
 
          ! Write profiles structure to PRTM file (array operations needed to
          ! recast structure in form ncdf_write_array recognises)
-         i_ = idim - preproc_dims%min_lon + 1
-         j_ = jdim - preproc_dims%min_lat + 1
+         i_ = idim
+         j_ = jdim
          call ncdf_write_array(netcdf_info%ncid_prtm, 'lon_rtm', &
               netcdf_info%vid_lon_pw, &
               (/profiles(count)%longitude/), &
@@ -587,8 +588,8 @@ subroutine rttov_driver_gfs(coef_path, emiss_path, granule, preproc_dims, &
       if (verbose) write(*,*) ' - Calculating for viewing geometry number', cview
 
       count = 0
-      do jdim = preproc_dims%min_lat, preproc_dims%max_lat
-         do idim = preproc_dims%min_lon, preproc_dims%max_lon
+      do jdim = 1, preproc_dims%ydim
+         do idim = 1, preproc_dims%xdim
             count = count + 1
             profiles(count)%zenangle = preproc_geo%satza(idim,jdim,cview)
             profiles(count)%azangle = preproc_geo%satazi(idim,jdim,cview)
@@ -715,8 +716,8 @@ subroutine rttov_driver_gfs(coef_path, emiss_path, granule, preproc_dims, &
          if ((verbose) .and. i_coef .eq. 1) write(*,*) 'Run RTTOV Longwave'
          if ((verbose) .and. i_coef .eq. 2) write(*,*) 'Run RTTOV Shortwave'
 #endif
-         do jdim = preproc_dims%min_lat, preproc_dims%max_lat
-            do idim = preproc_dims%min_lon, preproc_dims%max_lon
+         do jdim = 1, preproc_dims%ydim
+            do idim = 1, preproc_dims%xdim
                count = count + 1
 
                ! Process points that contain information and satisfy the zenith
@@ -780,16 +781,16 @@ subroutine rttov_driver_gfs(coef_path, emiss_path, granule, preproc_dims, &
                   if (i_coef == 1) then
                      do i_ = 1, nchan
                         call write_ir_rttov(netcdf_info, &
-                             idim-preproc_dims%min_lon+1, &
-                             jdim-preproc_dims%min_lat+1, &
+                             idim, &
+                             jdim, &
                              profiles(count)%nlevels, emissivity, transmission, &
                              radiance, radiance2, write_rttov, chan_pos(i_), i_)
                      end do
                   else
                      do i_ = 1, nchan
                         call write_solar_rttov(netcdf_info, coefs, &
-                             idim-preproc_dims%min_lon+1, &
-                             jdim-preproc_dims%min_lat+1, &
+                             idim, &
+                             jdim, &
                              profiles(count)%nlevels, profiles(count)%zenangle, &
                              transmission, write_rttov, chan_pos(i_), i_)
                      end do
@@ -807,8 +808,8 @@ subroutine rttov_driver_gfs(coef_path, emiss_path, granule, preproc_dims, &
 #else
             if (verbose) write(*,*) 'Run RTTOV for cloud'
 #endif
-               do jdim = preproc_dims%min_lat, preproc_dims%max_lat
-                  do idim = preproc_dims%min_lon, preproc_dims%max_lon
+               do jdim = 1, preproc_dims%ydim
+                  do idim = 1, preproc_dims%xdim
                      count = count + 1
                      profiles(count)%cfraction = 1.
                      profiles(count)%ctp = preproc_prtm%trop_p(idim,jdim)
