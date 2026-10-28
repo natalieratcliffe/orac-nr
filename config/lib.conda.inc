@@ -39,8 +39,8 @@ LIBS += -lnr
 INC  += -DINCLUDE_NR
 
 # Uncomment if LIBEMOS is available for meteorological field interpolation.
-#LIBS += -lemosR64 -lemos
-#INC  += -DINCLUDE_EMOS
+LIBS += -lemosR64 -lemos
+INC  += -DINCLUDE_EMOS
 
 # Uncomment if Fu_Liou support is desired for broadband fluxes.
 LIBS += -lEd3Fu_201212

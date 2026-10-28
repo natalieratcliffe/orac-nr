@@ -318,6 +318,7 @@
 ! 2021/03/14, AP: Move setup selection into a dedicated routine.
 ! 2023/06/26, GT: Added a 1-hour default for the NWP time factor for BADC
 !                 ERA5 data (nwp_flag = 2).
+! 2026/10/27, NR: Added basic MSI EarthCARE support similar to python + VIIRS.
 !
 ! Bugs:
 ! See http://proj.badc.rl.ac.uk/orac/report/1
