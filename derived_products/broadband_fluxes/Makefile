@@ -57,10 +57,10 @@ ORAC_OBJ = $(OBJS)/kinds.o \
 
 ORAC_OBJ_MAIN = $(OBJS)/process_broadband_fluxes.o
 
-SEVIRI_ML_LIB = /home/users/nrat/orac/orac/src/seviri_ml
-SEVIRI_ML_INCLUDE = /home/users/nrat/orac/orac/src/seviri_ml
-SEVIRI_ML_PYTHON_LIB = /home/users/nrat/miniforge3/envs/orac_git/lib
-SEVIRI_ML_PYTHON_INCLUDE = /home/users/nrat/miniforge3/envs/orac_git/include/python3.10
+SEVIRI_ML_LIB = $(ORACDIR)/src/seviri_ml
+SEVIRI_ML_INCLUDE = $(ORACDIR)/src/seviri_ml
+SEVIRI_ML_PYTHON_LIB = $(CONDA_PREFIX)/lib
+SEVIRI_ML_PYTHON_INCLUDE = $(CONDA_PREFIX)/include/python3.10
 LIBS += -L$(SEVIRI_ML_LIB) -lsevann -L$(SEVIRI_ML_PYTHON_LIB) -lpython3.10
 INC += -I$(SEVIRI_ML_INCLUDE) -I$(SEVIRI_ML_PYTHON_INCLUDE)
 INC += -DINCLUDE_SEVIRI_NEURALNET
