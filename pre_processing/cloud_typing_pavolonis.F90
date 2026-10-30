@@ -86,8 +86,9 @@
 ! 2024/03/13, GT: Added a check for missing values in the 11 micron band before
 !                 attempting cloud masking/typing. This catches pixels which
 !                 exist and are geolocated, but have no data.
-! 2026/09/22, NR: Added support for the MSI (EarthCARE) instrument. Without the 
-!                 3ish micron channel, the cloud typing is skipped.
+! 2026/09/22, NR: Added support for the MSI (EarthCARE) instrument. Without the
+!                 3ish micron channel, ch4 = 0 the 3.7 micron channel is treated as
+!                 missing, so the 1.6 micron cloud mask ANN is used instead.
 !
 ! Bugs:
 ! None known.
@@ -667,8 +668,8 @@ subroutine cloud_type(channel_info, sensor, surface, imager_flags, &
             case(3)
                ch3 = i
                sw3 = ii
-            case(4)
-               ch4 = i
+            ! No 3.7 micron channel: ch4 stays 0. Channel 4 is 2.2 micron
+            ! reflectance, so must not be used as the 3.7 micron BT.
             case(6)
                ch5 = i
             case(7)
@@ -1043,7 +1044,7 @@ subroutine cloud_type_pixel(cview, i, j, ch1, ch2, ch3, ch4, ch5, ch6, &
    real(kind=sreal)               :: glint_angle
    real(kind=sreal)               :: rad_ch3b, rad_ch3b_emis
    real(kind=sreal)               :: ref_ch1, ref_ch3a, ref_ch3b
-   real(kind=sreal)               :: bt_ch3b
+   real(kind=sreal)               :: bt_ch3b, bt_ch37
    real(kind=sreal)               :: BTD_Ch3b_Ch4, BTD_Ch4_Ch5
    real(kind=sreal), dimension(2) :: plank_inv_out
    real(kind=sreal)               :: solcon_ch3b
@@ -1058,13 +1059,21 @@ subroutine cloud_type_pixel(cview, i, j, ch1, ch2, ch3, ch4, ch5, ch6, &
    ! Check if solar zenith angle is < 0
    if (imager_angles%solzen(i,j,cview) .lt. 0.) return
 
+   ! Sensors without a 3.7 micron channel (e.g. MSI) have ch4 = 0. Treat the
+   ! channel as missing, so Ch3a (1.6 micron) is used as for AVHRR.
+   if (ch4 .gt. 0) then
+      bt_ch37 = imager_measurements%data(i,j,ch4)
+   else
+      bt_ch37 = sreal_fill_value
+   end if
+
    if (.not. do_ironly) then
       ! Check if Ch3a is available or not (fill_value is negative)
       if (imager_measurements%data(i,j,ch3) .ge. 0 .and. &
-           imager_measurements%data(i,j,ch4) .lt. 0) then
+           bt_ch37 .lt. 0) then
          ! Ch3a is used if Ch3b is not avail.
          ch3a_on_avhrr_flag = YES
-      else if (imager_measurements%data(i,j,ch4) .ge. 0) then
+      else if (bt_ch37 .ge. 0) then
          ! Ch3b is used if avail.
          ch3a_on_avhrr_flag = NO
       else
@@ -1072,7 +1081,7 @@ subroutine cloud_type_pixel(cview, i, j, ch1, ch2, ch3, ch4, ch5, ch6, &
          ch3a_on_avhrr_flag = INEXISTENT
       end if
    else
-      if (imager_measurements%data(i,j,ch4) .ge. 0) then
+      if (bt_ch37 .ge. 0) then
          ! Ch3b is used if avail.
          ch3a_on_avhrr_flag = NO
       else
@@ -1086,10 +1095,10 @@ subroutine cloud_type_pixel(cview, i, j, ch1, ch2, ch3, ch4, ch5, ch6, &
        trim(adjustl(sensor)) .eq. 'ATSR2') then
       ! Changed min value of 3.7 for AATSR
       if (imager_measurements%data(i,j,ch3) .ge. 0 .and. &
-          imager_measurements%data(i,j,ch4) .lt. 100) then
+          bt_ch37 .lt. 100) then
          ! Ch3a is used if Ch3b is not avail.
          ch3a_on_avhrr_flag = YES
-      else if (imager_measurements%data(i,j,ch4) .ge. 100) then
+      else if (bt_ch37 .ge. 100) then
          ! Ch3b is used if avail.
          ch3a_on_avhrr_flag = NO
       else
@@ -1160,7 +1169,7 @@ subroutine cloud_type_pixel(cview, i, j, ch1, ch2, ch3, ch4, ch5, ch6, &
                  imager_measurements%data(i,j,ch6)
 
    ! BT(3.75) minus BT(11)
-   BTD_Ch3b_Ch4 = imager_measurements%data(i,j,ch4) - &
+   BTD_Ch3b_Ch4 = bt_ch37 - &
                   imager_measurements%data(i,j,ch5)
 
    ! Calculate spatial stddev of BT(11)
@@ -1174,7 +1183,7 @@ subroutine cloud_type_pixel(cview, i, j, ch1, ch2, ch3, ch4, ch5, ch6, &
    SD_BT11 = SQRT (SUM((imager_measurements%DATA(s_i:e_i,s_j:e_j,ch5) - MN_BT11)**2) / (NNN - 1))
 
    ! Calculate ch3b radiance and emissivity
-   plank_inv_out  = plank_inv(platform, imager_measurements%data(i,j,ch4))
+   plank_inv_out  = plank_inv(platform, bt_ch37)
    rad_ch3b       = plank_inv_out(1)
    solcon_ch3b    = plank_inv_out(2)
    plank_inv_out  = plank_inv(platform, imager_measurements%data(i,j,ch5))
@@ -1237,7 +1246,7 @@ subroutine cloud_type_pixel(cview, i, j, ch1, ch2, ch3, ch4, ch5, ch6, &
       ch1v    = imager_measurements%data(i,j,ch1)
       ch2v    = imager_measurements%data(i,j,ch2)
       ch3v    = imager_measurements%data(i,j,ch3)
-      bt_ch3b = imager_measurements%data(i,j,ch4)
+      bt_ch3b = bt_ch37
       alb1    = surface%albedo(i,j,sw1)
       alb2    = surface%albedo(i,j,sw2)
       alb3    = surface%albedo(i,j,sw3)
@@ -2173,6 +2182,7 @@ function plank_inv(input_platform, T)
    case ("MTG-I1")
       index = 26
    case ("EarthCARE")
+      ! Defers to the default values
       index = 27
    case ("default")
       index = 27
